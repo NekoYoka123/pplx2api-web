@@ -201,6 +201,7 @@ curl -X POST http://localhost:8482/v1/chat/completions \
 - **config.json 找不到**：确保启动目录与 `config.json` 在同一目录（Docker 需要挂载）。
 
 ---
+基于https://github.com/yushangxiao/pplx2api.git项目的修改
 
 ## License
 MIT，详见 `LICENSE`。
