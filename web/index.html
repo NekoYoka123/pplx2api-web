@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PPLX2API 控制台</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+    <div class="bg-grid"></div>
+
+    <main class="container">
+      <header class="mast">
+        <div class="mast-text">
+          <span class="pill">本地管理</span>
+          <h1>PPLX2API 控制台</h1>
+          <p>管理会话、默认模型与运行时行为。</p>
+        </div>
+        <div class="mast-actions">
+          <div class="status-card">
+            <div class="status-line">状态：<span id="connStatus" class="status-badge">未连接</span></div>
+            <div class="status-line">服务地址：<span id="serverAddress" class="mono">未知</span></div>
+            <div class="action-row">
+              <button id="reloadBtn" class="ghost">加载</button>
+              <button id="saveBtn" class="primary">保存</button>
+            </div>
+            <p id="statusMessage" class="status-message">请输入管理密钥（config.json 的 apikey）后加载配置。</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel-grid">
+        <div class="panel" style="--delay: 0.05s">
+          <div class="panel-header">
+            <h2>访问</h2>
+            <span class="panel-hint mono">/admin/config</span>
+          </div>
+          <label class="field">
+            <span>管理密钥</span>
+            <input id="authKey" type="password" placeholder="config.json 里的 apikey">
+          </label>
+          <div class="field-note">用于加载/保存配置（Authorization: Bearer）。</div>
+          <label class="field">
+            <span>设置新的管理密钥（可选）</span>
+            <input id="newApiKey" type="password" placeholder="留空则不更换">
+          </label>
+          <div class="meta-line">当前密钥：<span id="apiKeyHint" class="mono">未知</span></div>
+          <div class="field-note">默认管理密钥为 123456，首次可直接使用后再修改。</div>
+        </div>
+
+        <div class="panel" style="--delay: 0.1s">
+          <div class="panel-header">
+            <h2>会话</h2>
+            <span class="panel-hint mono">Perplexity Cookie</span>
+          </div>
+          <label class="field">
+            <span>Cookie 列表</span>
+            <div id="sessionsList" class="session-list"></div>
+          </label>
+          <div class="meta-row">
+            <div class="meta-actions">
+              <button id="addSessionBtn" class="ghost small" type="button">添加 Cookie</button>
+              <button id="clearSessionsBtn" class="ghost small" type="button">清空</button>
+            </div>
+            <span>会话数量：<span id="sessionsCount" class="mono">0</span></span>
+          </div>
+          <div class="field-note">支持粘贴多行或逗号分隔，自动拆分为多个条目。</div>
+          <div id="sessionsWarning" class="field-note warn"></div>
+        </div>
+        </div>
+
+        <div class="panel" style="--delay: 0.15s">
+          <div class="panel-header">
+            <h2>模型路由</h2>
+            <span class="panel-hint mono">默认与强制</span>
+          </div>
+          <label class="field">
+            <span>默认模型</span>
+            <div class="field-row">
+              <select id="defaultModel"></select>
+              <button id="refreshModelsBtn" class="ghost small" type="button">刷新列表</button>
+            </div>
+          </label>
+          <div class="field-note">从 /v1/models 读取模型列表。</div>
+          <label class="field">
+            <span>强制模型</span>
+            <input id="forceModel" type="text" placeholder="留空为不启用">
+          </label>
+          <div class="field-note">开启后会覆盖所有请求的模型。</div>
+          <div class="switch-grid">
+            <label class="switch">
+              <input id="ignoreModelMonitoring" type="checkbox">
+              <span></span>
+              忽略模型监控
+            </label>
+            <label class="switch">
+              <input id="ignoreSearchResult" type="checkbox">
+              <span></span>
+              隐藏搜索结果
+            </label>
+            <label class="switch">
+              <input id="searchResultCompatible" type="checkbox">
+              <span></span>
+              搜索结果兼容模式
+            </label>
+          </div>
+        </div>
+
+        <div class="panel" style="--delay: 0.2s">
+          <div class="panel-header">
+            <h2>行为</h2>
+            <span class="panel-hint mono">运行时设置</span>
+          </div>
+          <label class="field">
+            <span>最大聊天历史长度</span>
+            <input id="maxChatHistoryLength" type="number" min="1">
+          </label>
+          <div class="field-note">超过该长度会触发自动上传文件模式。</div>
+          <label class="field">
+            <span>文件提示词</span>
+            <textarea id="promptForFile" rows="4"></textarea>
+          </label>
+          <div class="field-note">当对话过长时用于指引模型读取文件内容。</div>
+          <div class="switch-grid">
+            <label class="switch">
+              <input id="isIncognito" type="checkbox">
+              <span></span>
+              隐身模式
+            </label>
+            <label class="switch">
+              <input id="noRolePrefix" type="checkbox">
+              <span></span>
+              禁用角色前缀
+            </label>
+            <label class="switch">
+              <input id="isMaxSubscribe" type="checkbox">
+              <span></span>
+              Max 订阅
+            </label>
+          </div>
+        </div>
+
+        <div class="panel" style="--delay: 0.25s">
+          <div class="panel-header">
+            <h2>网络</h2>
+            <span class="panel-hint mono">代理</span>
+          </div>
+          <label class="field">
+            <span>代理地址</span>
+            <input id="proxy" type="text" placeholder="http://user:pass@host:port">
+          </label>
+          <div class="field-note">留空表示不使用代理，修改后立即生效。</div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div class="footer-row">
+          <span class="mono">提示：</span> 保存时使用当前管理密钥。如已更换，请在保存后更新输入框。
+        </div>
+      </footer>
+    </main>
+
+    <template id="sessionRowTemplate">
+      <div class="session-row">
+        <div class="session-info">
+          <span class="session-label">Cookie 1</span>
+        </div>
+        <input class="session-input" type="password" placeholder="粘贴 Cookie / Session Token">
+        <button class="danger small remove-session" type="button">删除</button>
+      </div>
+    </template>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

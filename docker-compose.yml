@@ -1,0 +1,8 @@
+version: "3.8"
+services:
+  pplx2api:
+    build: .
+    container_name: pplx2api
+    ports:
+      - "8482:8482"
+    restart: unless-stopped
