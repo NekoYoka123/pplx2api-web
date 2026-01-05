@@ -134,6 +134,18 @@ func overlapSuffixPrefix(base string, next string) int {
 	return 0
 }
 
+func commonPrefixLen(a string, b string) int {
+	max := len(a)
+	if len(b) < max {
+		max = len(b)
+	}
+	i := 0
+	for i < max && a[i] == b[i] {
+		i++
+	}
+	return i
+}
+
 func appendWithOverlap(acc *string, incoming string) string {
 	if incoming == "" {
 		return ""
@@ -142,10 +154,25 @@ func appendWithOverlap(acc *string, incoming string) string {
 		*acc = incoming
 		return incoming
 	}
+	if incoming == *acc {
+		return ""
+	}
 	if strings.HasPrefix(incoming, *acc) {
 		delta := incoming[len(*acc):]
-		*acc = incoming
+		if len(delta) >= 200 {
+			prefixLen := commonPrefixLen(*acc, delta)
+			if prefixLen >= 200 {
+				delta = delta[prefixLen:]
+			}
+		}
+		if delta == "" {
+			return ""
+		}
+		*acc += delta
 		return delta
+	}
+	if strings.HasPrefix(*acc, incoming) {
+		return ""
 	}
 	overlap := overlapSuffixPrefix(*acc, incoming)
 	if overlap > 0 {
