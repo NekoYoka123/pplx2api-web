@@ -113,6 +113,15 @@ type ImageModeBlock struct {
 	} `json:"media_items"`
 }
 
+type ModelMismatchError struct {
+	Requested string
+	Displayed string
+}
+
+func (e ModelMismatchError) Error() string {
+	return fmt.Sprintf("display model mismatch: requested %s, got %s", e.Requested, e.Displayed)
+}
+
 func overlapSuffixPrefix(base string, next string) int {
 	if base == "" || next == "" {
 		return 0
@@ -146,6 +155,77 @@ func commonPrefixLen(a string, b string) int {
 	return i
 }
 
+func trimRepeatedPrefix(acc string, delta string) string {
+	if acc == "" || delta == "" {
+		return delta
+	}
+	for {
+		if strings.HasPrefix(delta, acc) {
+			delta = delta[len(acc):]
+			continue
+		}
+		if len(delta) < 200 {
+			break
+		}
+		prefixLen := commonPrefixLen(acc, delta)
+		if prefixLen < 200 {
+			break
+		}
+		delta = delta[prefixLen:]
+	}
+	return delta
+}
+
+func looksLikeRepeatedPrefix(acc string, incoming string) bool {
+	if !strings.HasPrefix(acc, incoming) {
+		return false
+	}
+	rest := acc[len(incoming):]
+	if rest == "" {
+		return false
+	}
+	rest = strings.TrimLeft(rest, "\r\n\t ")
+	prefixLen := 120
+	if len(incoming) < prefixLen {
+		prefixLen = len(incoming)
+	}
+	if prefixLen < 40 {
+		return false
+	}
+	return strings.HasPrefix(rest, incoming[:prefixLen])
+}
+
+func appendBySuffixMatch(acc *string, incoming string) string {
+	if acc == nil || *acc == "" || incoming == "" {
+		return ""
+	}
+	accLen := len(*acc)
+	if accLen < 80 {
+		return ""
+	}
+	maxCheck := accLen
+	if maxCheck > 400 {
+		maxCheck = 400
+	}
+	minOverlap := 80
+	if maxCheck < minOverlap {
+		minOverlap = maxCheck
+	}
+	for overlap := maxCheck; overlap >= minOverlap; overlap-- {
+		suffix := (*acc)[accLen-overlap:]
+		idx := strings.LastIndex(incoming, suffix)
+		if idx >= 0 {
+			delta := incoming[idx+overlap:]
+			if delta == "" {
+				return ""
+			}
+			*acc += delta
+			return delta
+		}
+	}
+	return ""
+}
+
 func appendWithOverlap(acc *string, incoming string) string {
 	if incoming == "" {
 		return ""
@@ -159,12 +239,7 @@ func appendWithOverlap(acc *string, incoming string) string {
 	}
 	if strings.HasPrefix(incoming, *acc) {
 		delta := incoming[len(*acc):]
-		if len(delta) >= 200 {
-			prefixLen := commonPrefixLen(*acc, delta)
-			if prefixLen >= 200 {
-				delta = delta[prefixLen:]
-			}
-		}
+		delta = trimRepeatedPrefix(*acc, delta)
 		if delta == "" {
 			return ""
 		}
@@ -174,14 +249,73 @@ func appendWithOverlap(acc *string, incoming string) string {
 	if strings.HasPrefix(*acc, incoming) {
 		return ""
 	}
+	if idx := strings.LastIndex(incoming, *acc); idx >= 0 {
+		delta := incoming[idx+len(*acc):]
+		delta = trimRepeatedPrefix(*acc, delta)
+		if delta == "" {
+			return ""
+		}
+		*acc += delta
+		return delta
+	}
 	overlap := overlapSuffixPrefix(*acc, incoming)
 	if overlap > 0 {
 		delta := incoming[overlap:]
 		*acc += delta
 		return delta
 	}
+	accLen := len(*acc)
+	incomingLen := len(incoming)
+	if accLen >= 200 && incomingLen >= accLen*8/10 {
+		if delta := appendBySuffixMatch(acc, incoming); delta != "" {
+			return delta
+		}
+		if incomingLen <= accLen*12/10 {
+			return ""
+		}
+	}
 	*acc += incoming
 	return incoming
+}
+
+func mergeNonStreamText(acc string, incoming string) string {
+	if incoming == "" {
+		return acc
+	}
+	if acc == "" {
+		return incoming
+	}
+	if incoming == acc {
+		return acc
+	}
+	if strings.Contains(incoming, acc) {
+		return incoming
+	}
+	if strings.Contains(acc, incoming) {
+		if looksLikeRepeatedPrefix(acc, incoming) {
+			return incoming
+		}
+		return acc
+	}
+
+	prefixLen := commonPrefixLen(acc, incoming)
+	minPrefix := 120
+	if len(acc) < minPrefix || len(incoming) < minPrefix {
+		minPrefix = 60
+	}
+	if prefixLen >= minPrefix {
+		return incoming
+	}
+
+	overlap := overlapSuffixPrefix(acc, incoming)
+	if overlap > 0 {
+		return acc + incoming[overlap:]
+	}
+
+	if prefixLen >= 30 && len(incoming) >= len(acc) {
+		return incoming
+	}
+	return acc + incoming
 }
 
 func mergeChunkWithOverlap(base string, chunk string) string {
@@ -361,17 +495,24 @@ func (c *Client) SendMessage(message string, stream bool, is_incognito bool, gc 
 func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context) error {
 	defer body.Close()
 	// Set headers for streaming
+	strictModelMatch := config.ConfigInstance.RejectModelMismatch
+	streamReady := !stream || !strictModelMatch
+	streamStarted := false
+	var pendingStream strings.Builder
 	if stream {
 		gc.Writer.Header().Set("Content-Type", "text/event-stream")
 		gc.Writer.Header().Set("Cache-Control", "no-cache")
 		gc.Writer.Header().Set("Connection", "keep-alive")
-		gc.Writer.WriteHeader(http.StatusOK)
-		gc.Writer.Flush()
+		if streamReady {
+			gc.Writer.WriteHeader(http.StatusOK)
+			gc.Writer.Flush()
+			streamStarted = true
+		}
 	}
 	scanner := bufio.NewScanner(body)
+	// Increase buffer to avoid ErrTooLong on large SSE payloads.
+	scanner.Buffer(make([]byte, 0, 1024*1024), 4*1024*1024)
 	clientDone := gc.Request.Context().Done()
-	// 增大缓冲区大小
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 	responseModel := c.RequestModel
 	if responseModel == "" {
 		responseModel = config.ModelReverseMapGet(c.Model, c.Model)
@@ -383,6 +524,7 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 	if searchSuffix != "" && !strings.HasSuffix(responseModel, searchSuffix) {
 		responseModel += searchSuffix
 	}
+	requestedModelBase := config.ModelReverseMapGet(c.Model, c.Model)
 	full_text := ""
 	lastMarkdownText := ""
 	lastThinkingText := ""
@@ -394,6 +536,37 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 	inThinking := false
 	thinkShown := false
 	final := false
+	startStream := func() {
+		if !stream || streamStarted {
+			return
+		}
+		gc.Writer.WriteHeader(http.StatusOK)
+		gc.Writer.Flush()
+		streamStarted = true
+	}
+	flushPending := func() error {
+		if !stream || pendingStream.Len() == 0 {
+			return nil
+		}
+		startStream()
+		text := pendingStream.String()
+		pendingStream.Reset()
+		return model.ReturnOpenAIResponse(text, true, responseModel, gc)
+	}
+	sendStream := func(text string) error {
+		if !stream || text == "" {
+			return nil
+		}
+		if !streamReady {
+			pendingStream.WriteString(text)
+			return nil
+		}
+		if err := flushPending(); err != nil {
+			return err
+		}
+		startStream()
+		return model.ReturnOpenAIResponse(text, true, responseModel, gc)
+	}
 	for scanner.Scan() {
 		select {
 		case <-clientDone:
@@ -424,6 +597,15 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 			if searchSuffix != "" && !strings.HasSuffix(responseModel, searchSuffix) {
 				responseModel += searchSuffix
 			}
+			if strictModelMatch && displayModel != "" && displayModel != requestedModelBase {
+				return ModelMismatchError{Requested: requestedModelBase, Displayed: displayModel}
+			}
+			if !streamReady {
+				streamReady = true
+				if err := flushPending(); err != nil {
+					return err
+				}
+			}
 		}
 		// Check for completion and web results
 		if response.Status == "COMPLETED" {
@@ -442,7 +624,9 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 					}
 					if stream {
 						full_text += imageResultsText
-						model.ReturnOpenAIResponse(imageResultsText, stream, responseModel, gc)
+						if err := sendStream(imageResultsText); err != nil {
+							return err
+						}
 					} else {
 						finalImageText += imageResultsText
 					}
@@ -456,7 +640,9 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 					}
 					if stream {
 						full_text += webResultsText
-						model.ReturnOpenAIResponse(webResultsText, stream, responseModel, gc)
+						if err := sendStream(webResultsText); err != nil {
+							return err
+						}
 					} else {
 						finalWebText += webResultsText
 					}
@@ -471,7 +657,9 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 					res_text += fmt.Sprintf("Display Model: %s\n", displayModel)
 					if stream {
 						full_text += res_text
-						model.ReturnOpenAIResponse(res_text, stream, responseModel, gc)
+						if err := sendStream(res_text); err != nil {
+							return err
+						}
 					} else {
 						finalDisplayModelText = res_text
 					}
@@ -491,12 +679,16 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				if thinkingText == "" {
 					continue
 				}
-				delta := appendWithOverlap(&lastThinkingText, thinkingText)
-				if delta == "" {
+				if !stream {
+					lastThinkingText = mergeNonStreamText(lastThinkingText, thinkingText)
+					if lastThinkingText == "" {
+						continue
+					}
+					finalThinkingText = lastThinkingText
 					continue
 				}
-				if !stream {
-					finalThinkingText = lastThinkingText
+				delta := appendWithOverlap(&lastThinkingText, thinkingText)
+				if delta == "" {
 					continue
 				}
 				res_text := ""
@@ -509,7 +701,9 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				if !stream {
 					continue
 				}
-				model.ReturnOpenAIResponse(res_text, stream, responseModel, gc)
+				if err := sendStream(res_text); err != nil {
+					return err
+				}
 			}
 		}
 		for _, block := range response.Blocks {
@@ -518,13 +712,17 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				if markdownText == "" {
 					continue
 				}
+				if !stream {
+					lastMarkdownText = mergeNonStreamText(lastMarkdownText, markdownText)
+					if lastMarkdownText == "" {
+						continue
+					}
+					finalMarkdownText = lastMarkdownText
+					continue
+				}
 				delta := appendWithOverlap(&lastMarkdownText, markdownText)
 				res_text := ""
 				if delta == "" {
-					continue
-				}
-				if !stream {
-					finalMarkdownText = lastMarkdownText
 					continue
 				}
 				if inThinking {
@@ -540,7 +738,9 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 				if !stream {
 					continue
 				}
-				model.ReturnOpenAIResponse(res_text, stream, responseModel, gc)
+				if err := sendStream(res_text); err != nil {
+					return err
+				}
 			}
 		}
 		if final {
@@ -563,6 +763,13 @@ func (c *Client) HandleResponse(body io.ReadCloser, stream bool, gc *gin.Context
 		full_text += finalDisplayModelText
 		model.ReturnOpenAIResponse(full_text, stream, responseModel, gc)
 	} else {
+		if !streamReady {
+			streamReady = true
+			if err := flushPending(); err != nil {
+				return err
+			}
+		}
+		startStream()
 		// Send end marker for streaming mode
 		gc.Writer.Write([]byte("data: [DONE]\n\n"))
 		gc.Writer.Flush()

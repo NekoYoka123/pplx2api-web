@@ -45,6 +45,7 @@ type Config struct {
 	IgnoreSerchResult      bool
 	IgnoreModelMonitoring  bool
 	IsMaxSubscribe         bool
+	RejectModelMismatch    bool
 }
 
 type ConfigFile struct {
@@ -62,6 +63,7 @@ type ConfigFile struct {
 	IsMaxSubscribe         bool     `json:"is_max_subscribe"`
 	DefaultModel           string   `json:"default_model"`
 	ForceModel             string   `json:"force_model"`
+	RejectModelMismatch    bool     `json:"reject_model_mismatch"`
 }
 
 type ConfigFileInput struct {
@@ -79,6 +81,7 @@ type ConfigFileInput struct {
 	IsMaxSubscribe         *bool    `json:"is_max_subscribe"`
 	DefaultModel           *string  `json:"default_model"`
 	ForceModel             *string  `json:"force_model"`
+	RejectModelMismatch    *bool    `json:"reject_model_mismatch"`
 }
 
 // NormalizeSessionKeys trims and sanitizes session tokens.
@@ -120,6 +123,7 @@ func DefaultConfigFile() ConfigFile {
 		IsMaxSubscribe:         false,
 		DefaultModel:           defaultModel,
 		ForceModel:             "",
+		RejectModelMismatch:    false,
 	}
 }
 
@@ -160,6 +164,9 @@ func normalizeConfigFile(input ConfigFileInput) ConfigFile {
 	}
 	if input.IgnoreModelMonitoring != nil {
 		cfg.IgnoreModelMonitoring = *input.IgnoreModelMonitoring
+	}
+	if input.RejectModelMismatch != nil {
+		cfg.RejectModelMismatch = *input.RejectModelMismatch
 	}
 	if input.IsMaxSubscribe != nil {
 		cfg.IsMaxSubscribe = *input.IsMaxSubscribe
@@ -223,6 +230,7 @@ func SnapshotConfigFile() ConfigFile {
 		IsMaxSubscribe:         ConfigInstance.IsMaxSubscribe,
 		DefaultModel:           ConfigInstance.DefaultModel,
 		ForceModel:             ConfigInstance.ForceModel,
+		RejectModelMismatch:    ConfigInstance.RejectModelMismatch,
 	}
 	ConfigInstance.RwMutex.RUnlock()
 	return snapshot
@@ -270,6 +278,7 @@ func LoadConfig() *Config {
 		IgnoreSerchResult:      fileConfig.IgnoreSearchResult,
 		IgnoreModelMonitoring:  fileConfig.IgnoreModelMonitoring,
 		IsMaxSubscribe:         fileConfig.IsMaxSubscribe,
+		RejectModelMismatch:    fileConfig.RejectModelMismatch,
 		RwMutex:                sync.RWMutex{},
 	}
 }
@@ -315,4 +324,5 @@ func init() {
 	logger.Info(fmt.Sprintf("IgnoreSerchResult: %t", ConfigInstance.IgnoreSerchResult))
 	logger.Info(fmt.Sprintf("IgnoreModelMonitoring: %t", ConfigInstance.IgnoreModelMonitoring))
 	logger.Info(fmt.Sprintf("IsMaxSubscribe: %t", ConfigInstance.IsMaxSubscribe))
+	logger.Info(fmt.Sprintf("RejectModelMismatch: %t", ConfigInstance.RejectModelMismatch))
 }

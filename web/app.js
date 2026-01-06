@@ -4,7 +4,9 @@ const $ = (id) => document.getElementById(id);
 
 const elements = {
   authKey: $("authKey"),
+  authKeyToggle: $("authKeyToggle"),
   newApiKey: $("newApiKey"),
+  newApiKeyToggle: $("newApiKeyToggle"),
   apiKeyHint: $("apiKeyHint"),
   sessionsList: $("sessionsList"),
   addSessionBtn: $("addSessionBtn"),
@@ -16,6 +18,7 @@ const elements = {
   refreshModelsBtn: $("refreshModelsBtn"),
   forceModel: $("forceModel"),
   ignoreModelMonitoring: $("ignoreModelMonitoring"),
+  rejectModelMismatch: $("rejectModelMismatch"),
   ignoreSearchResult: $("ignoreSearchResult"),
   searchResultCompatible: $("searchResultCompatible"),
   maxChatHistoryLength: $("maxChatHistoryLength"),
@@ -34,6 +37,7 @@ const elements = {
 const storageKey = "pplx_admin_key";
 elements.serverAddress.textContent = window.location.origin;
 let modelList = [];
+const buttonLabels = new Map();
 
 function setConnection(label, state) {
   elements.connStatus.textContent = label;
@@ -48,10 +52,52 @@ function setStatus(state, message) {
   elements.statusMessage.dataset.state = state || "";
 }
 
+function setButtonLoading(button, isLoading, label) {
+  if (!button) {
+    return;
+  }
+  if (!buttonLabels.has(button)) {
+    buttonLabels.set(button, button.textContent);
+  }
+  if (isLoading) {
+    button.dataset.loading = "true";
+    button.setAttribute("aria-busy", "true");
+    button.disabled = true;
+    if (label) {
+      button.textContent = label;
+    }
+  } else {
+    button.removeAttribute("data-loading");
+    button.removeAttribute("aria-busy");
+    button.disabled = false;
+    const original = buttonLabels.get(button);
+    if (original) {
+      button.textContent = original;
+    }
+  }
+}
+
 function maskKey(key) {
   if (!key) return "未设置";
   if (key.length <= 4) return "****";
   return `****${key.slice(-4)}`;
+}
+
+function wireVisibilityToggle(button, input) {
+  if (!button || !input) {
+    return;
+  }
+  const updateLabel = (visible) => {
+    button.textContent = visible ? "隐藏" : "显示";
+    button.setAttribute("aria-pressed", visible ? "true" : "false");
+  };
+  updateLabel(input.type !== "password");
+  button.addEventListener("click", () => {
+    const shouldReveal = input.type === "password";
+    input.type = shouldReveal ? "text" : "password";
+    updateLabel(shouldReveal);
+    input.focus({ preventScroll: true });
+  });
 }
 
 function splitSessions(value) {
@@ -134,6 +180,7 @@ function addSessionRow(value, options = {}) {
   input.value = value || "";
   input.addEventListener("input", updateSessionsMeta);
   input.addEventListener("paste", handleSessionPaste);
+  wireVisibilityToggle(row.querySelector(".toggle-visibility"), input);
 
   const removeBtn = row.querySelector(".remove-session");
   removeBtn.addEventListener("click", () => {
@@ -209,8 +256,10 @@ async function loadModels(preferred, options = {}) {
     return false;
   }
 
-  if (!options.silent) {
+  const shouldAnnounce = !options.silent;
+  if (shouldAnnounce) {
     setStatus("info", "正在加载模型列表...");
+    setButtonLoading(elements.refreshModelsBtn, true, "加载中...");
   }
 
   try {
@@ -229,16 +278,20 @@ async function loadModels(preferred, options = {}) {
     const list = Array.isArray(data.data) ? data.data.map((item) => item.id).filter(Boolean) : [];
     modelList = uniqueValues(list);
     setModelOptions(modelList, preferred);
-    if (!options.silent) {
+    if (shouldAnnounce) {
       setStatus("success", "模型列表已更新。");
     }
     return true;
   } catch (err) {
     setModelOptions([], preferred);
-    if (!options.silent) {
+    if (shouldAnnounce) {
       setStatus("error", err.message || "加载模型列表失败。");
     }
     return false;
+  } finally {
+    if (shouldAnnounce) {
+      setButtonLoading(elements.refreshModelsBtn, false);
+    }
   }
 }
 
@@ -250,6 +303,8 @@ async function loadConfig() {
     return;
   }
 
+  setButtonLoading(elements.reloadBtn, true, "加载中...");
+  setButtonLoading(elements.saveBtn, true, "请稍候");
   setStatus("info", "正在加载配置...");
   try {
     const response = await fetch("/admin/config", {
@@ -273,6 +328,7 @@ async function loadConfig() {
     elements.promptForFile.value = data.prompt_for_file || "";
     elements.ignoreSearchResult.checked = Boolean(data.ignore_search_result);
     elements.ignoreModelMonitoring.checked = Boolean(data.ignore_model_monitoring);
+    elements.rejectModelMismatch.checked = Boolean(data.reject_model_mismatch);
     elements.isMaxSubscribe.checked = Boolean(data.is_max_subscribe);
     const defaultModel = data.default_model || "claude-3.7-sonnet";
     elements.forceModel.value = data.force_model || "";
@@ -288,6 +344,9 @@ async function loadConfig() {
   } catch (err) {
     setConnection("未连接", "is-bad");
     setStatus("error", err.message || "加载配置失败。");
+  } finally {
+    setButtonLoading(elements.reloadBtn, false);
+    setButtonLoading(elements.saveBtn, false);
   }
 }
 
@@ -319,6 +378,7 @@ function buildPayload() {
     prompt_for_file: elements.promptForFile.value,
     ignore_search_result: elements.ignoreSearchResult.checked,
     ignore_model_monitoring: elements.ignoreModelMonitoring.checked,
+    reject_model_mismatch: elements.rejectModelMismatch.checked,
     is_max_subscribe: elements.isMaxSubscribe.checked,
     default_model: defaultModel,
     force_model: elements.forceModel.value.trim(),
@@ -345,6 +405,7 @@ async function saveConfig() {
     return;
   }
 
+  setButtonLoading(elements.saveBtn, true, "保存中...");
   setStatus("info", "正在保存配置...");
   try {
     const response = await fetch("/admin/config", {
@@ -375,6 +436,8 @@ async function saveConfig() {
   } catch (err) {
     setConnection("未连接", "is-bad");
     setStatus("error", err.message || "保存配置失败。");
+  } finally {
+    setButtonLoading(elements.saveBtn, false);
   }
 }
 
@@ -396,6 +459,8 @@ const storedKey = localStorage.getItem(storageKey);
 if (storedKey) {
   elements.authKey.value = storedKey;
 }
+wireVisibilityToggle(elements.authKeyToggle, elements.authKey);
+wireVisibilityToggle(elements.newApiKeyToggle, elements.newApiKey);
 setSessionsList([]);
 setModelOptions([], "");
 setConnection("未连接", "is-bad");

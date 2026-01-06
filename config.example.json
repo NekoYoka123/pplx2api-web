@@ -10,6 +10,7 @@
   "prompt_for_file": "You must immerse yourself...",
   "ignore_search_result": false,
   "ignore_model_monitoring": false,
+  "reject_model_mismatch": false,
   "is_max_subscribe": false,
   "default_model": "claude-3.7-sonnet",
   "force_model": ""

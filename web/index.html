@@ -17,6 +17,36 @@
           <span class="pill">本地管理</span>
           <h1>PPLX2API 控制台</h1>
           <p>管理会话、默认模型与运行时行为。</p>
+          <div class="quick-start">
+            <div class="quick-step">
+              <span class="step-index">1</span>
+              <div>
+                <div class="step-title">输入密钥</div>
+                <div class="step-desc">填写 config.json 的 apikey</div>
+              </div>
+            </div>
+            <div class="quick-step">
+              <span class="step-index">2</span>
+              <div>
+                <div class="step-title">加载配置</div>
+                <div class="step-desc">读取当前服务配置</div>
+              </div>
+            </div>
+            <div class="quick-step">
+              <span class="step-index">3</span>
+              <div>
+                <div class="step-title">调整参数</div>
+                <div class="step-desc">更新模型、会话或行为</div>
+              </div>
+            </div>
+            <div class="quick-step">
+              <span class="step-index">4</span>
+              <div>
+                <div class="step-title">保存生效</div>
+                <div class="step-desc">保存后立即更新</div>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="mast-actions">
           <div class="status-card">
@@ -26,7 +56,7 @@
               <button id="reloadBtn" class="ghost">加载</button>
               <button id="saveBtn" class="primary">保存</button>
             </div>
-            <p id="statusMessage" class="status-message">请输入管理密钥（config.json 的 apikey）后加载配置。</p>
+            <p id="statusMessage" class="status-message" aria-live="polite">请输入管理密钥（config.json 的 apikey）后加载配置。</p>
           </div>
         </div>
       </header>
@@ -39,12 +69,18 @@
           </div>
           <label class="field">
             <span>管理密钥</span>
-            <input id="authKey" type="password" placeholder="config.json 里的 apikey">
+            <div class="input-with-toggle">
+              <input id="authKey" type="password" placeholder="config.json 里的 apikey" autocomplete="current-password">
+              <button id="authKeyToggle" class="ghost small toggle-visibility" type="button" aria-pressed="false">显示</button>
+            </div>
           </label>
           <div class="field-note">用于加载/保存配置（Authorization: Bearer）。</div>
           <label class="field">
             <span>设置新的管理密钥（可选）</span>
-            <input id="newApiKey" type="password" placeholder="留空则不更换">
+            <div class="input-with-toggle">
+              <input id="newApiKey" type="password" placeholder="留空则不更换" autocomplete="new-password">
+              <button id="newApiKeyToggle" class="ghost small toggle-visibility" type="button" aria-pressed="false">显示</button>
+            </div>
           </label>
           <div class="meta-line">当前密钥：<span id="apiKeyHint" class="mono">未知</span></div>
           <div class="field-note">默认管理密钥为 123456，首次可直接使用后再修改。</div>
@@ -68,7 +104,6 @@
           </div>
           <div class="field-note">支持粘贴多行或逗号分隔，自动拆分为多个条目。</div>
           <div id="sessionsWarning" class="field-note warn"></div>
-        </div>
         </div>
 
         <div class="panel" style="--delay: 0.15s">
@@ -94,6 +129,11 @@
               <input id="ignoreModelMonitoring" type="checkbox">
               <span></span>
               忽略模型监控
+            </label>
+            <label class="switch">
+              <input id="rejectModelMismatch" type="checkbox">
+              <span></span>
+              模型不一致时报错
             </label>
             <label class="switch">
               <input id="ignoreSearchResult" type="checkbox">
@@ -167,7 +207,10 @@
         <div class="session-info">
           <span class="session-label">Cookie 1</span>
         </div>
-        <input class="session-input" type="password" placeholder="粘贴 Cookie / Session Token">
+        <div class="input-with-toggle compact">
+          <input class="session-input" type="password" placeholder="粘贴 Cookie / Session Token">
+          <button class="ghost small toggle-visibility" type="button" aria-pressed="false">显示</button>
+        </div>
         <button class="danger small remove-session" type="button">删除</button>
       </div>
     </template>

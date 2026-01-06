@@ -24,6 +24,7 @@ type AdminConfigResponse struct {
 	IgnoreSearchResult     bool     `json:"ignore_search_result"`
 	IgnoreModelMonitoring  bool     `json:"ignore_model_monitoring"`
 	IsMaxSubscribe         bool     `json:"is_max_subscribe"`
+	RejectModelMismatch    bool     `json:"reject_model_mismatch"`
 	DefaultModel           string   `json:"default_model"`
 	ForceModel             string   `json:"force_model"`
 	Sessions               []string `json:"sessions"`
@@ -44,6 +45,7 @@ type AdminConfigUpdateRequest struct {
 	DefaultModel           *string  `json:"default_model,omitempty"`
 	ForceModel             *string  `json:"force_model,omitempty"`
 	Sessions               *[]string `json:"sessions,omitempty"`
+	RejectModelMismatch    *bool    `json:"reject_model_mismatch,omitempty"`
 }
 
 type AdminConfigUpdateResponse struct {
@@ -74,6 +76,7 @@ func AdminConfigGetHandler(c *gin.Context) {
 		IgnoreSearchResult:     config.ConfigInstance.IgnoreSerchResult,
 		IgnoreModelMonitoring:  config.ConfigInstance.IgnoreModelMonitoring,
 		IsMaxSubscribe:         config.ConfigInstance.IsMaxSubscribe,
+		RejectModelMismatch:    config.ConfigInstance.RejectModelMismatch,
 		DefaultModel:           config.ConfigInstance.DefaultModel,
 		ForceModel:             config.ConfigInstance.ForceModel,
 		Sessions:               sessions,
@@ -144,6 +147,11 @@ func AdminConfigUpdateHandler(c *gin.Context) {
 	if req.IgnoreModelMonitoring != nil {
 		config.ConfigInstance.IgnoreModelMonitoring = *req.IgnoreModelMonitoring
 		changed = append(changed, "ignore_model_monitoring")
+	}
+
+	if req.RejectModelMismatch != nil {
+		config.ConfigInstance.RejectModelMismatch = *req.RejectModelMismatch
+		changed = append(changed, "reject_model_mismatch")
 	}
 
 	if req.IsMaxSubscribe != nil {
